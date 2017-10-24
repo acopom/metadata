@@ -1,6 +1,5 @@
 package org.sparqlbuilder.metadata.crawler.sparql;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -26,6 +25,9 @@ import com.hp.hpl.jena.rdf.model.ModelFactory;
 import com.hp.hpl.jena.rdf.model.Property;
 //import com.hp.hpl.jena.rdf.model.RDFWriter;
 import com.hp.hpl.jena.rdf.model.Resource;
+import java.io.*;
+import jena.sparql;
+import virtuoso.jena.driver.*;
 
 // import com.hp.hpl.jena.sparql.engine.http.QueryExceptionHTTP;
 
@@ -41,13 +43,26 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 	File outDir = null;
 	String[] graphURIs = null;
 	String[] graphURIFilter = URICollection.FILTER_GRAPH;
+        boolean virt = false;
+        String virtPort = "jdbc:virtuoso://localhost:1111";
+        String virtUser = "dba";
+        String virtPWD = "dba";
+        VirtGraph vg = null;
+        //String virtConfig = null;
 
 	static LogFileManager logFileManager = null;
 	static LogFileManager logFileManagerForRecovery = null;
 	static TodoFileManager todoFileManager = null;
 
 	public static void main(String[] args) throws Exception {
-
+                boolean virt = false;
+                String virtPort = "jdbc:virtuoso://localhost:1111";
+                String virtUser = "dba";
+                String virtPWD = "dba";
+                String[] args_copy = null;
+                if ( args.length > 1 ){
+                    args_copy = new String[args.length-1];
+                }
 		System.out.println("  Version: " + version);
 
 		if (args.length == 2 && args[0].equals("-g")) {
@@ -63,12 +78,30 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				}
 			}
 		} else {
-			if( args.length == 4 && args[0].equals("-d") ){
+                        if ( args[0].equals("-virt")){
+                            virt = true;
+                            for (int i = 1; i <args.length; i++){
+                                args_copy[i-1] = args[i];
+                            }
+                            args = args_copy;
+                            System.out.println("Enter virt port");
+                            BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+                            String r = in.readLine();
+                            if ( r.length() > 0 ){ virtPort = r; }
+                            System.out.println("Enter user id");
+                            r = in.readLine();
+                            if ( r.length() > 0 ){ virtUser = r; }
+                            System.out.println("Enter passwd");
+                            r = in.readLine();
+                            if ( r.length() > 0 ){ virtPWD = r; }
+                            in.close();
+                        }
+	                if( args.length == 4 && args[0].equals("-d") ){
 				String endPURI = args[1];
 				String crawlName = args[2];
 				String outDir = args[3];
 				// graphlist
-				RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir);
+				RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir, virt);
 				String[] graphURIs = new String[0];
 				crawl(impl, graphURIs);
 			}else{
@@ -76,7 +109,7 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 					String endPURI = args[1];
 					String crawlName = args[2];
 					String outDir = args[3];
-					RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir);
+					RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir, virt);
 					String[] graphURIs = null;
 					graphURIs = impl.getGraphURIs();
 					if (graphURIs == null || graphURIs.length == 0) {
@@ -100,7 +133,7 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 						String crawlName = args[2];
 						String targetGraphURI = args[3];
 						String outDir = args[4];
-						RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir);
+						RDFsCrawlerImpl impl = new RDFsCrawlerImpl(endPURI, crawlName, outDir, virt);
 
 						String[] graphURIs = null;
 						graphURIs = impl.getGraphURIs();
@@ -137,7 +170,6 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 	}
 
 	public static void crawl(RDFsCrawlerImpl impl, String[] graphURIs) throws Exception {
-
 		// global model
 		Model wholeModel = null;
 		wholeModel = ModelFactory.createDefaultModel();
@@ -345,10 +377,15 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		ResultSet results = null;
 		String[] recoveryStrings = null;
 		try {
+                    if ( virt ){
+                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                    }else{
 			// long start = System.currentTimeMillis();
 			qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
-			interval();
-			results = qexec.execSelect();
+                    }
+		    interval();
+		    results = qexec.execSelect();
 			// long end = System.currentTimeMillis();
 			// System.out.println("EXEC TIME: " + (end - start));
 		} catch (Exception ex) {
@@ -671,14 +708,18 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 			QueryExecution qexec = null;
 			ResultSet results = null;
 			try {
+                            if ( virt ){
+                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                            }else{
 				// long start = System.currentTimeMillis();
 				qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
-				endpointAccessCount++;
-				interval();
-				results = qexec.execSelect();
+                            }
+		            endpointAccessCount++;
+			    interval();
+			    results = qexec.execSelect();
 				// long end = System.currentTimeMillis();
 				// System.out.println("EXEC TIME: " + (end - start));
-				System.out.print("L");
+				//System.out.print("L");
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				System.out.println(queryString);
@@ -694,6 +735,7 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 					cls.addLiteral(labelPro, label);
 				}
 			}
+                        
 			qexec.close();
 
 			// QUERY
@@ -733,14 +775,19 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 			int sCount = 3;
 			while (sCount > 0) {
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
-					endpointAccessCount++;
-					interval();
-					results = qexec.execSelect();
+                                    }
+				    endpointAccessCount++;
+				    interval();
+				    results = qexec.execSelect();
 					// long end = System.currentTimeMillis();
 					// System.out.println("EXEC TIME: " + (end - start));
-					break;
+				    break;
 				} catch (Exception ex) {
 					sCount--;
 					if (sCount == 0) {
@@ -793,8 +840,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		QueryExecution qexec = null;
 		ResultSet results = null;
 		try {
+                    if ( virt ){
+                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                    }else{                    
 			// long start = System.currentTimeMillis();
 			qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                    }
 			endpointAccessCount++;
 			results = qexec.execSelect();
 			// // long end = System.currentTimeMillis();
@@ -937,8 +989,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				QueryExecution qexec = null;
 				ResultSet results = null;
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -988,8 +1045,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1052,10 +1114,14 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 
 				int sCount = 3;
 				while (sCount > 0) {
-
 					try {
+                                            if ( virt ){
+                                                //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                            }else{                            
 						// long start = System.currentTimeMillis();
 						qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                            }
 						endpointAccessCount++;
 						qexec.setTimeout(-1);
 						interval();
@@ -1153,10 +1219,14 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 
 				sCount = 3;
 				while (sCount > 0) {
-
 					try {
+                                            if ( virt ){
+                                                //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                            }else{                           
 						// long start = System.currentTimeMillis();
 						qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                            }
 						qexec.setTimeout(-1);
 						endpointAccessCount++;
 						interval();
@@ -1290,9 +1360,14 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 					sCount = 5;
 					while (sCount > 0) {
 						try {
-							query = QueryFactory.create(queryString);
+                                                    query = QueryFactory.create(queryString);
+                                                    if ( virt ){
+                                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                                    }else{
 							// long start = System.currentTimeMillis();
 							qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                                    }
 							qexec.setTimeout(-1);
 							endpointAccessCount++;
 							interval();
@@ -1438,8 +1513,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
-					// long start = System.currentTimeMillis();
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
+                                    // long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1509,7 +1589,12 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				try {
 					query = QueryFactory.create(queryString);
 					// long start = System.currentTimeMillis();
-					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                        if ( virt ){
+                                            //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                            qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                        }else{                       
+					    qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                        }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1564,8 +1649,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1621,7 +1711,12 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				results = null;
 				try {
 					// long start = System.currentTimeMillis();
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{                                    
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1733,8 +1828,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
-					// long start = System.currentTimeMillis();
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
+                                        // long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1788,8 +1888,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -1849,8 +1954,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				qexec = null;
 				results = null;
 				try {
+                                    if ( virt ){
+                                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                    }else{                            
 					// long start = System.currentTimeMillis();
 					qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                    }
 					endpointAccessCount++;
 					interval();
 					results = qexec.execSelect();
@@ -2294,7 +2404,25 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		this.graphURIs = graphURIs;
 	}
 
-	public Model getPropertiesFromInstanceDecls() throws Exception {
+	public RDFsCrawlerImpl(String endpointURI, String crawlName, String outDirName, boolean virt) throws Exception {
+		this.endpointURI = endpointURI;
+		this.crawlName = crawlName;
+		this.outDir = new File(outDirName);
+                this.virt = virt;
+                if (virt){
+                    this.vg = new VirtGraph (virtPort, virtUser, virtPWD);
+                }
+		if (!this.outDir.exists()) {
+			this.outDir.mkdirs();
+		} else {
+			if (this.outDir.isFile()) {
+				throw new Exception("Output File exists and new output directory cannot be created: "
+						+ this.outDir.getCanonicalPath());
+			}
+		}
+	}
+
+        public Model getPropertiesFromInstanceDecls() throws Exception {
 
 		// QUERY
 		// ---------------------------------------------------------------------------------
@@ -2331,8 +2459,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		QueryExecution qexec = null;
 		ResultSet results = null;
 		try {
-			// long start = System.currentTimeMillis();
+                    if ( virt ){
+                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                    }else{
+                    // long start = System.currentTimeMillis();
 			qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                    }
 			endpointAccessCount++;
 			interval();
 			results = qexec.execSelect();
@@ -2404,8 +2537,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		QueryExecution qexec = null;
 		ResultSet results = null;
 		try {
+                    if ( virt ){
+                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                    }else{
 			// long start = System.currentTimeMillis();
 			qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                    }
 			endpointAccessCount++;
 			interval();
 			results = qexec.execSelect();
@@ -2500,8 +2638,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 			QueryExecution qexec = null;
 			ResultSet results = null;
 			try {
+                            if ( virt ){
+                                //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                            }else{                            
 				// long start = System.currentTimeMillis();
 				qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                            }
 				endpointAccessCount++;
 				interval();
 				results = qexec.execSelect();
@@ -2573,8 +2716,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		QueryExecution qexec = null;
 		ResultSet results = null;
 		try {
+                    if ( virt ){
+                        //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                        qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                    }else{                    
 			// long start = System.currentTimeMillis();
 			qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                    }
 			endpointAccessCount++;
 			interval();
 			results = qexec.execSelect();
@@ -2649,8 +2797,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 		int sCount = 3;
 		while (sCount > 0) {
 			try {
+                            if ( virt ){
+                                //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                            }else{                            
 				// long start = System.currentTimeMillis();
 				qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                            }
 				// qexec.setTimeout(240000L);
 				endpointAccessCount++;
 				results = qexec.execSelect();
@@ -2746,8 +2899,13 @@ public class RDFsCrawlerImpl implements RDFsCrawler {
 				int sCount = 3;
 				while (sCount > 0) {
 					try {
+                                            if ( virt ){
+                                                //VirtGraph set = new VirtGraph (virtPort, virtUser, virtPWD);
+                                                qexec = VirtuosoQueryExecutionFactory.create (query, vg);
+                                            }else{
 						// long start = System.currentTimeMillis();
 						qexec = QueryExecutionFactory.sparqlService(endpointURI, query);
+                                            }
 						endpointAccessCount++;
 						qexec.setTimeout(-1);
 						interval();
